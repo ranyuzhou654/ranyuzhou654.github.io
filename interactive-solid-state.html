@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式固体物理探索</title>
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.1/math.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+    <!-- NEW: Added Three.js and Post-processing libraries for the new visualization -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+    <!-- Custom Styles -->
+    <style>
+        :root {
+            --bg-base: #f8fafc;
+            --bg-surface: #ffffff;
+            --bg-subtle: #f1f5f9;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --accent-primary: #4f46e5;
+            --accent-primary-hover: #4338ca;
+            --accent-secondary: #10b981;
+            --accent-secondary-hover: #059669;
+            --accent-ai: #f59e0b;
+            --accent-ai-hover: #d97706;
+        }
+
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .card {
+            background-color: var(--bg-surface);
+            border-radius: 0.75rem;
+            padding: 1.5rem 2rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+        @media (min-width: 768px) { .card { padding: 2rem 2.5rem; } }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            border: 1px solid transparent;
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        }
+        .btn-primary { background-color: var(--accent-primary); color: white; }
+        .btn-primary:hover { background-color: var(--accent-primary-hover); box-shadow: 0 4px 12px rgb(79 70 229 / 0.2); }
+        .btn-primary:disabled { background-color: #a5b4fc; cursor: not-allowed; box-shadow: none; }
+        .btn-secondary { background-color: var(--accent-secondary); color: white; }
+        .btn-secondary:hover { background-color: var(--accent-secondary-hover); box-shadow: 0 4px 12px rgb(16 185 129 / 0.2); }
+        .btn-ai { background-color: var(--accent-ai); color: white; }
+        .btn-ai:hover { background-color: var(--accent-ai-hover); box-shadow: 0 4px 12px rgb(245 158 11 / 0.2); }
+
+        .nav-link { position: relative; transition: color 0.3s ease; padding-bottom: 6px; }
+        .nav-link::after { content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: 2px; background-color: var(--accent-primary); transform: scaleX(0); transform-origin: bottom right; transition: transform 0.3s ease-out; }
+        .nav-link:hover::after, .nav-link.active::after { transform: scaleX(1); transform-origin: bottom left; }
+        .nav-link.active { color: var(--accent-primary); font-weight: 500; }
+
+        .chart-container { position: relative; width: 100%; height: 350px; }
+        @media (min-width: 768px) { .chart-container { height: 400px; } }
+        .small-chart-container { position: relative; width: 100%; height: 200px; }
+
+        .derivation { max-height: 0; overflow: hidden; transition: max-height 0.7s cubic-bezier(0.83, 0, 0.17, 1); }
+        .gemini-response-box { background-color: #fffbeb; border-left: 4px solid var(--accent-ai); padding: 1.25rem; margin-top: 1.5rem; border-radius: 0.5rem; color: #92400e; }
+
+        input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; background: #e2e8f0; border-radius: 5px; outline: none; opacity: 0.7; transition: opacity .2s; }
+        input[type="range"]:hover { opacity: 1; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; background: var(--accent-primary); cursor: pointer; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.2); }
+        input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; background: var(--accent-primary); cursor: pointer; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.2); }
+    
+        #api-key-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: none; align-items: center; justify-content: center; z-index: 100;
+        }
+        #api-key-modal-content {
+            background-color: white; padding: 2rem; border-radius: 0.75rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; max-width: 90%; width: 400px;
+        }
+
+        #home {
+            background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
+            overflow: hidden;
+            position: relative;
+        }
+        .glow-point {
+            position: absolute;
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05), 0 0 20px 0 var(--accent-primary), 0 0 30px 0 var(--accent-primary-hover);
+            border-radius: 50%;
+            animation: float 15s ease-in-out infinite;
+        }
+        @keyframes float {
+            0% { transform: translateY(0px) translateX(0px); }
+            50% { transform: translateY(-30px) translateX(15px); }
+            100% { transform: translateY(0px) translateX(0px); }
+        }
+        /* Style for the new 3D visualization labels */
+        .label_3d {
+            color: #ffffff;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            text-shadow: 0 0 3px black;
+        }
+    </style>
+</head>
+
+<body class="bg-base">
+
+    <nav id="navbar" class="bg-surface/80 backdrop-blur-lg shadow-sm sticky top-0 z-50">
+        <div class="max-w-screen-2xl mx-auto px-6">
+            <div class="flex items-center justify-between h-16">
+                <span class="text-xl font-bold" style="color: var(--accent-primary);">晶格中的电子 ✨</span>
+                <div class="hidden md:flex items-center space-x-10 text-slate-600">
+                    <a href="#home" class="nav-link">首页</a>
+                    <a href="#core-theorem" class="nav-link">核心定理</a>
+                    <a href="#two-models" class="nav-link">两大模型</a>
+                    <a href="#consequences" class="nav-link">物理推论</a>
+                    <a href="#frontiers" class="nav-link">前沿课题</a>
+                    <a href="#quiz" class="nav-link">随堂测验</a>
+                </div>
+                <div class="md:hidden">
+                    <select id="mobile-nav" class="bg-white border border-gray-300 rounded-md py-2 px-3 text-primary focus:outline-none focus:ring-2 focus:ring-offset-2" style="border-color: var(--accent-primary); --tw-ring-color: var(--accent-primary);">
+                        <option value="#home">首页</option><option value="#core-theorem">核心定理</option><option value="#two-models">两大模型</option><option value="#consequences">物理推论</option><option value="#frontiers">前沿课题</option><option value="#quiz">随堂测验</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <section id="home" class="min-h-screen flex flex-col justify-center items-center text-center py-16 px-4">
+             <div id="home-glows"></div>
+            <h1 class="text-5xl md:text-7xl font-bold mb-6 tracking-tight text-white relative z-10">晶格中的电子</h1>
+            <p class="text-lg md:text-xl text-slate-300 max-w-3xl mx-auto mb-10 relative z-10">从布洛赫定理到前沿物理的交互式探索</p>
+            <div class="w-full max-w-3xl relative z-10">
+                <div class="card text-left bg-white/10 backdrop-blur-xl border-white/20">
+                    <h2 class="text-2xl font-bold mb-4 text-white">一切始于一个问题</h2>
+                    <p class="text-slate-300 leading-relaxed">一个看似简单的固体物理习题，实际上是通往广阔理论世界的大门。本应用将以此为起点，通过交互式可视化和 AI 助教，逐层揭示其背后深刻的物理概念。</p>
+                </div>
+            </div>
+            <a href="#core-theorem" class="mt-16 text-slate-400 animate-bounce relative z-10">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" />
+                </svg>
+            </a>
+        </section>
+        
+        <div class="max-w-screen-2xl mx-auto px-6 py-8 md:py-12">
+            <section id="core-theorem" class="py-20">
+                <div class="text-center mb-12"><h2 class="text-3xl md:text-4xl font-bold mb-4 text-slate-800">核心定理：布洛赫定理</h2><p class="text-lg text-secondary max-w-3xl mx-auto">这是整个能带理论的数学基石，它源于晶格的平移对称性，并深刻地制约了电子在周期性势场中的行为方式。</p></div>
+                <div class="card">
+                    <div class="grid md:grid-cols-2 gap-12 items-center">
+                        <div class="prose max-w-none">
+                            <h3 class="text-2xl font-bold" style="color: var(--accent-primary);">定理的数学形式</h3>
+                            <p class="text-secondary">布洛赫定理指出，电子在周期势场中的波函数 $\psi_k(x)$ 可以写成一个平面波 $e^{ikx}$ 和一个具有晶格周期性的函数 $u_k(x)$ 的乘积。</p>
+                            <div class="bg-indigo-50 border-l-4 border-indigo-400 p-4 rounded-r-lg my-5 text-center text-lg">$\psi_k(x) = u_k(x)e^{ikx}$</div>
+                            <p class="text-secondary">其中，$u_k(x) = u_k(x+a)$，这保证了电子在每个晶胞中的概率分布 $|\psi_k(x)|^2 = |u_k(x)|^2$ 是相同的。</p>
+                        </div>
+                        <div>
+                            <h3 class="text-2xl font-bold mb-4 text-center" style="color: var(--accent-primary);">波函数可视化</h3>
+                            <p class="mb-4 text-secondary text-center">一个布洛赫波由<span class="font-semibold text-red-500">周期部分 $u_k(x)$</span>、<span class="font-semibold text-blue-500">平面波 $e^{ikx}$</span> 和相乘得到的<span class="font-semibold" style="color: var(--accent-secondary);">总波函数 $\psi_k(x)$</span>组成。</p>
+                            <div class="chart-container"><canvas id="blochWaveChart"></canvas></div>
+                            <div class="mt-4"><label for="k_slider" class="text-secondary">波矢 $k$ (单位: $\pi/a$): <span id="k_value" class="font-bold w-12 inline-block" style="color: var(--accent-primary);">0.50</span></label><input type="range" id="k_slider" min="0" max="1" step="0.01" value="0.5"></div>
+                        </div>
+                    </div>
+                    <div class="mt-10 text-center"><button class="btn btn-ai gemini-eli5-btn" data-concept="布洛赫定理">✨ AI助教，通俗讲解</button><div class="gemini-response-container text-left" style="display: none;"></div></div>
+                </div>
+            </section>
+
+            <section id="two-models" class="py-20 bg-subtle rounded-2xl">
+                <div class="text-center mb-12"><h2 class="text-3xl md:text-4xl font-bold mb-4 text-slate-800">两大模型：能带的起源</h2><p class="text-lg text-secondary max-w-3xl mx-auto">能带和能隙是如何形成的？物理学家从两个相反的极限出发，提出了两种核心模型。</p></div>
+                <div class="space-y-12">
+                    <div class="card">
+                        <h3 class="text-2xl font-bold text-center mb-2" style="color: var(--accent-primary);">近自由电子模型 (NFEM)：能隙的形成</h3>
+                        <p class="text-secondary text-center max-w-3xl mx-auto mb-6">从自由电子出发，观察周期性势场是如何打开能隙的。点击下方按钮，一步步观看动画。</p>
+                        <div class="text-center mb-6"><button id="nfeButton" class="btn btn-primary w-48">1. 显示自由电子</button></div>
+                        <p id="nfe-status-text" class="text-center text-secondary h-6 mb-4 transition-opacity duration-300"></p>
+                        <div class="grid md:grid-cols-2 gap-12 items-center">
+                            <div><h4 class="text-xl font-semibold mb-4 text-center">能带结构 (E-k图)</h4><div class="chart-container"><canvas id="nfeChart"></canvas></div></div>
+                            <div id="nfe-explanation" class="space-y-4 opacity-0 transition-opacity duration-500">
+                                <h4 class="text-xl font-semibold mb-2 text-center">物理图像：驻波与势能</h4>
+                                <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200"><h5 class="font-bold text-emerald-700">高能态 (反键态) $\psi_-$</h5><p class="text-sm text-emerald-800 mb-2">电子云集中在离子实之间，势能升高。</p><canvas id="standingWaveHigh" class="w-full h-24 bg-white rounded"></canvas></div>
+                                <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200"><h5 class="font-bold text-indigo-700">低能态 (成键态) $\psi_+$</h5><p class="text-sm text-indigo-800 mb-2">电子云集中在离子实上，势能降低。</p><canvas id="standingWaveLow" class="w-full h-24 bg-white rounded"></canvas></div>
+                            </div>
+                        </div>
+                        <div class="mt-10 text-center space-x-4">
+                            <button class="btn btn-ai gemini-eli5-btn" data-concept="近自由电子模型和能隙的形成">✨ AI助教，通俗讲解</button>
+                            <button id="derivation-toggle-btn" class="btn bg-slate-600 text-white hover:bg-slate-700">显示公式推导</button>
+                        </div>
+                        <div id="derivation-content" class="derivation text-secondary mt-6 border-t pt-6 prose prose-slate max-w-none">
+                            <h4 class="font-bold text-lg mb-2" style="color: var(--accent-primary);">能隙成因的微扰理论推导</h4>
+                            <p>我们从定态薛定谔方程出发：$(-\frac{\hbar^2}{2m}\frac{d^2}{dx^2} + V(x))\psi(x) = E\psi(x)$。其中势场 $V(x)$ 和波函数 $\psi(x)$ 都可以展开为傅里叶级数：</p>
+                            <p>$$ V(x) = \sum_G V_G e^{iGx} \quad , \quad \psi(x) = \sum_k C(k) e^{ikx} $$</p>
+                            <p>将它们代入薛定谔方程，经过整理可得关于系数 $C(k)$ 的方程组：</p>
+                            <p>$$ (\frac{\hbar^2k^2}{2m} - E)C(k) + \sum_G V_G C(k-G) = 0 $$</p>
+                            <p>这里 $E_k^0 = \frac{\hbar^2k^2}{2m}$ 是自由电子的能量。在布里渊区边界 $k \approx G/2$ 处，自由电子能级 $E_k^0$ 和 $E_{k-G}^0$ 近乎简并，此时波函数主要由这两个平面波分量构成。因此，我们近似地只保留这两项，得到一个二能级系统的方程组：</p>
+                            <p>$$(E_k^0 - E)C(k) + V_G C(k-G) = 0 $$</p>
+                            <p>$$(E_{k-G}^0 - E)C(k-G) + V_{-G} C(k) = 0 $$</p>
+                            <p>这个线性方程组有非零解的条件是其系数行列式为零。解这个关于能量 $E$ 的二次方程，得到新的本征能量：</p>
+                            <p>$$ E_{\pm}(k) = \frac{E_k^0 + E_{k-G}^0}{2} \pm \sqrt{(\frac{E_k^0 - E_{k-G}^0}{2})^2 + |V_G|^2} $$</p>
+                            <p>在边界上 $k=G/2$ 处，能量差达到最小值，即能隙的大小：$E_g = E_+ - E_- = 2|V_G|$。</p>
+                            <hr>
+                            <h5 class="font-bold text-lg mb-2" style="color: var(--accent-primary);">基于驻波的物理解释</h5>
+                            <p>在布里渊区边界 $k=\pi/a=G/2$ 处，电子波形成驻波。两种可能的驻波形式为：</p>
+                            <p>$$ \psi_+ \propto \cos(\frac{\pi x}{a}) \quad , \quad \psi_- \propto \sin(\frac{\pi x}{a}) $$</p>
+                            <p>我们来考虑电子在周期势场 $V(x)$ 中的平均势能。为简单起见，设势场在离子实（$x=0, \pm a, \dots$）位置有极小值，可近似为 $V(x) \approx V_1 \cos(\frac{2\pi x}{a})$。两种驻波的概率密度分别为：</p>
+                            <p>$$ |\psi_+|^2 \propto \cos^2(\frac{\pi x}{a}) = \frac{1}{2}(1+\cos(\frac{2\pi x}{a}))$$</p>
+                            <p>$$ |\psi_-|^2 \propto \sin^2(\frac{\pi x}{a}) = \frac{1}{2}(1-\cos(\frac{2\pi x}{a}))$$</p>
+                            <p>可见，$\psi_+$ 的电子云集中在离子实附近（势能低处），而 $\psi_-$ 的电子云集中在离子实之间（势能高处）。它们的平均势能差导致了能量分裂。能量的修正值为 $\Delta E = \int_0^a |\psi|^2 V(x) dx$。对于 $\psi_+$ 和 $\psi_-$，其能量差 $\Delta E_+ - \Delta E_-$ 正比于 $\int \cos^2(\frac{2\pi x}{a}) dx$，其值不为零，这个能量差就形成了能隙 $E_g$。</p>
+                        </div>
+                        <div class="gemini-response-container text-left" style="display: none;"></div>
+                    </div>
+
+                    <!-- ===== REPLACEMENT START ===== -->
+                    <div class="card mt-8">
+                        <div class="text-center mb-8">
+                            <h2 class="text-3xl font-bold text-slate-800" style="color: var(--accent-primary);">紧束缚模型：简单立方晶格s能带</h2>
+                            <p class="text-lg text-secondary mt-2">交互式探索原子轨道如何形成能带</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <!-- Left Side: Physics & Controls -->
+                            <div class="space-y-6">
+                                <div>
+                                    <h3 class="text-2xl font-semibold text-indigo-600 mb-3">物理模型</h3>
+                                    <p class="text-secondary">
+                                        我们考虑一个简单立方晶格，每个原子提供一个s态轨道。根据紧束缚近似，并只考虑最近邻相互作用，电子的能量色散关系由以下公式给出：
+                                    </p>
+                                    <div class="bg-indigo-50 p-4 rounded-lg my-4 text-center text-lg">
+                                        $E(\vec{k}) = E_{s} - J_{0} - 2J_{1}(\cos(k_x a) + \cos(k_y a) + \cos(k_z a))$
+                                    </div>
+                                    <ul class="text-secondary space-y-2">
+                                        <li>$E_s$: 孤立原子的s态能级。</li>
+                                        <li>$J_0$: 在位积分，与原子自身势场有关。</li>
+                                        <li>$J_1$: 最近邻原子间的跃迁（交叠）积分。</li>
+                                        <li>$a$: 晶格常数。</li>
+                                    </ul>
+                                     <p class="text-secondary mt-3">为简化模型，我们可设 $E_s - J_0 = 0$ 和 $a=1$。能量色散主要由跃迁积分 $J_1$ 决定。</p>
+                                </div>
+                                <hr>
+                                <div>
+                                    <h3 class="text-2xl font-semibold text-indigo-600 mb-4">参数调控</h3>
+                                    <label for="j1_slider" class="block font-medium text-slate-700">最近邻跃迁积分 $J_1$</label>
+                                    <p class="text-sm text-secondary mb-2">$J_1$ 越大，表示原子轨道交叠越强，能带越宽。</p>
+                                    <div class="flex items-center space-x-4">
+                                        <input type="range" id="j1_slider" min="0.1" max="1.5" step="0.05" value="0.5" class="w-full">
+                                        <span id="j1_value" class="font-mono text-indigo-600 text-lg w-16 text-center">0.50</span>
+                                    </div>
+                                </div>
+                                <hr>
+                                <div>
+                                    <h3 class="text-2xl font-semibold text-indigo-600 mb-3">第一布里渊区</h3>
+                                    <p class="text-secondary mb-4">简单立方晶格的第一布里渊区是一个立方体。下图展示了高对称点和我们计算能带所沿的路径 <span class="font-mono text-rose-500">Γ → X → M → Γ → R → X</span>。</p>
+                                    <div id="bz-container" class="relative w-full h-80 md:h-96 rounded-lg bg-black cursor-grab active:cursor-grabbing overflow-hidden"></div>
+                                </div>
+                            </div>
+
+                            <!-- Right Side: Band Structure Plot -->
+                            <div>
+                                <h3 class="text-2xl font-semibold text-indigo-600 mb-2">能带结构 (E-k图)</h3>
+                                <p class="text-secondary mb-1">能带宽度 $\Delta E = E_{max} - E_{min} = 12J_1$</p>
+                                <p class="text-secondary mb-4">当前能带宽度: <span id="bandwidth_value" class="font-mono text-indigo-600">6.00</span></p>
+                                <div class="w-full h-[40rem] chart-container">
+                                    <canvas id="bandStructureChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- ===== REPLACEMENT END ===== -->
+
+                </div>
+            </section>
+
+            <section id="consequences" class="py-20">
+                <div class="text-center mb-12"><h2 class="text-3xl md:text-4xl font-bold mb-4 text-slate-800">物理推论</h2><p class="text-lg text-secondary max-w-3xl mx-auto">抽象的 E-k 能带图直接决定了电子在晶体中的动态行为和材料的宏观属性。</p></div>
+                <div class="card">
+                    <div class="grid md:grid-cols-2 gap-12 items-center">
+                        <div class="prose max-w-none">
+                            <h3 class="text-2xl font-bold" style="color: var(--accent-primary);">有效质量 $m^*$</h3>
+                            <p class="text-secondary">晶格中的电子对外场（如电场）的响应与自由电子不同。它的“惯性”由能带的形状决定，我们用有效质量 $m^*$ 来描述这种行为。它与能带的曲率成反比：$1/m^* \propto d^2E/dk^2$。曲率越大，电子越“轻”，越容易被加速。</p>
+                            <ul class="mt-4 space-y-3 text-secondary list-none p-0">
+                            <li class="flex items-start"><span class="mr-3 mt-1 text-indigo-500">▶</span><span><b>能带底部 (极小值):</b> $d^2E/dk^2 > 0$，曲率是正的，所以 $m^* > 0$。电子行为像一个普通的带负电粒子。</span></li>
+                            <li class="flex items-start"><span class="mr-3 mt-1 text-red-500">▶</span><span><b>能带顶部 (极大值):</b> $d^2E/dk^2 < 0$，曲率是负的，所以 $m^* < 0$！这意味着在外电场作用下，电子的加速度与电场力方向相反。这种行为等效于一个带正电、质量为正的粒子——即“空穴”的运动。</span></li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold text-center mb-4" style="color: var(--accent-primary);">有效质量可视化</h3>
+                            <div class="chart-container"><canvas id="effectiveMassChart"></canvas></div>
+                            <p id="effectiveMassInfo" class="text-center mt-4 font-mono text-secondary h-6"></p>
+                        </div>
+                    </div>
+                    <div class="mt-10 text-center"><button class="btn btn-ai gemini-eli5-btn" data-concept="电子的有效质量">✨ AI助教，通俗讲解</button><div class="gemini-response-container text-left" style="display: none;"></div></div>
+                </div>
+            </section>
+
+            <section id="frontiers" class="py-20 bg-subtle rounded-2xl">
+                <div class="text-center mb-12"><h2 class="text-3xl md:text-4xl font-bold mb-4 text-slate-800">前沿课题</h2><p class="text-lg text-secondary max-w-3xl mx-auto">基础的能带理论是通往凝聚态物理前沿的跳板，例如拓扑绝缘体和强关联电子体系。</p></div>
+                <div class="grid md:grid-cols-1 gap-8 max-w-5xl mx-auto">
+                    <div class="card">
+                        <h3 class="text-2xl font-bold mb-4" style="color: var(--accent-secondary);">拓扑绝缘体 (SSH模型)</h3>
+                        <p class="mb-2 text-secondary">SSH（Su-Schrieffer-Heeger）模型是描述一维拓扑绝缘体的最简单模型。它由一个交替排列跃迁强度的原子链构成。</p>
+                        <div class="grid lg:grid-cols-2 gap-8 items-center">
+                             <div>
+                                <ul class="list-disc list-inside text-secondary space-y-2 mb-4">
+                                    <li><b>胞内跃迁 (v):</b> 同一个原胞内 A, B 两个原子间的跃迁强度。</li>
+                                    <li><b>胞间跃迁 (w):</b> 相邻原胞间的跃迁强度。</li>
+                                </ul>
+                                <div class="my-4 flex flex-col items-center">
+                                    <h4 class="text-lg font-semibold mb-2 text-center">原子链结构</h4>
+                                    <div id="ssh-chain" class="flex justify-center items-center h-20 p-2"></div>
+                                </div>
+                                <p class="text-secondary">体系的拓扑性质由 $v$ 和 $w$ 的相对大小决定。当 $v < w$ 时，体系处于拓扑非平庸相，有限长的链会在其两个边缘出现能量为零的“边缘态”。这些边缘态受到拓扑保护，意味着只要能隙不关闭，它们对局域的无序和缺陷是免疫的。</p>
+                                <div class="text-center mt-6">
+                                    <button id="sshButton" class="btn btn-secondary">切换到拓扑相 (v < w)</button>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="text-lg font-semibold mb-2 text-center">有限长链的能谱</h4>
+                                <div class="chart-container" style="height: 300px;"><canvas id="sshSpectrumChart"></canvas></div>
+                                <p id="ssh-phase-text" class="text-center font-semibold mt-2 h-6"></p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h3 class="text-2xl font-bold mb-4" style="color: var(--accent-ai);">✨ AI答疑，深入探索</h3>
+                        <p class="text-secondary mb-4">对拓扑绝缘体或其它前沿概念有疑问吗？在这里问问AI助教吧！</p>
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <input type="text" id="gemini-frontier-prompt" class="flex-grow border border-gray-300 rounded-md p-3 focus:ring-2 focus:outline-none" style="--tw-ring-color: var(--accent-ai);" placeholder="例如：什么是拓扑保护？">
+                            <button id="gemini-frontier-btn" class="btn btn-ai">提问</button>
+                        </div>
+                        <div id="gemini-frontier-response-container" class="gemini-response-container text-left" style="display: none;"></div>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="quiz" class="py-20">
+                <div class="text-center mb-12"><h2 class="text-3xl md:text-4xl font-bold mb-4 text-slate-800">随堂测验</h2><p class="text-lg text-secondary max-w-3xl mx-auto">检验一下学习成果吧！AI会根据本应用的内容为您生成一份独特的测验。</p></div>
+                <div class="card max-w-4xl mx-auto">
+                    <div class="text-center mb-6">
+                        <button id="gemini-quiz-btn" class="btn btn-ai">✨ AI出题！</button>
+                    </div>
+                    <div id="gemini-quiz-container"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+    
+    <footer class="text-center py-8 bg-slate-100 mt-12 border-t">
+        <p class="text-secondary">交互式应用由 Gemini API 强力驱动</p>
+    </footer>
+
+    <!-- API Key Modal -->
+    <div id="api-key-modal">
+        <div id="api-key-modal-content">
+            <h3 class="text-xl font-bold mb-4">需要 Gemini API 密钥</h3>
+            <p class="text-secondary mb-6">AI 助教功能需要一个有效的 Google Gemini API 密钥。请在代码中找到 `const apiKey = "";` 这一行并填入您的密钥。</p>
+            <button id="close-modal-btn" class="btn btn-primary">我明白了</button>
+        </div>
+    </div>
+
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        
+        const CHARTS = {};
+        const LATTICE_CONSTANT = 1;
+
+        function init() {
+            try {
+                initModal();
+                renderKaTeX();
+                initNavigation();
+                initGeminiFeatures();
+                initBlochWaveChart();
+                initNFEChart();
+                // REPLACED: initTBChart();
+                initTightBindingS_BandViz(); // NEW: Initialize the new s-band visualization
+                initEffectiveMassChart();
+                initSSHModel();
+                initHomeAnimation();
+            } catch (error) {
+                console.error("Initialization failed:", error);
+                const body = document.querySelector('body');
+                body.innerHTML = `<div class="w-screen h-screen flex items-center justify-center text-red-500 font-bold text-2xl p-8">页面加载失败: ${error.message}</div>`;
+            }
+        }
+        
+        function initHomeAnimation(){
+            const container = document.getElementById('home-glows');
+            if(!container) return;
+            for(let i=0; i<10; i++){
+                const glow = document.createElement('div');
+                glow.className = 'glow-point';
+                const size = Math.random() * 8 + 4;
+                glow.style.width = `${size}px`;
+                glow.style.height = `${size}px`;
+                glow.style.top = `${Math.random() * 100}%`;
+                glow.style.left = `${Math.random() * 100}%`;
+                glow.style.animationDelay = `${Math.random() * 15}s`;
+                glow.style.animationDuration = `${Math.random() * 10 + 10}s`;
+                container.appendChild(glow);
+            }
+        }
+
+        function initModal() {
+            const modal = document.getElementById('api-key-modal');
+            const closeBtn = document.getElementById('close-modal-btn');
+            if (modal && closeBtn) {
+                closeBtn.addEventListener('click', () => {
+                    modal.style.display = 'none';
+                });
+            }
+        }
+
+        function showApiKeyModal() {
+            const modal = document.getElementById('api-key-modal');
+            if (modal) {
+                modal.style.display = 'flex';
+            }
+        }
+
+
+        function renderKaTeX() {
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [ { left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false } ],
+                    throwOnError: false
+                });
+            }
+        }
+
+        function initNavigation() {
+            const navLinks = document.querySelectorAll('.nav-link');
+            const mobileNav = document.getElementById('mobile-nav');
+            const sections = document.querySelectorAll('main section');
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const id = entry.target.getAttribute('id');
+                        const activeHref = `#${id}`;
+                        navLinks.forEach(link => link.classList.toggle('active', link.getAttribute('href') === activeHref));
+                        if (mobileNav.value !== activeHref) mobileNav.value = activeHref;
+                    }
+                });
+            }, { rootMargin: '-30% 0px -70% 0px', threshold: 0 });
+
+            sections.forEach(section => observer.observe(section));
+            mobileNav.addEventListener('change', (e) => {
+                document.querySelector(e.target.value).scrollIntoView({ behavior: 'smooth' });
+            });
+        }
+
+        function initGeminiFeatures() {
+            async function callGeminiAPI(prompt, isJsonRequest = false) {
+                const apiKey = "AIzaSyChRpB3YBD0957UB9vfoIJ-cPzWv7p010Y"; // IMPORTANT: Add your Gemini API Key here
+                if (!apiKey) {
+                    showApiKeyModal();
+                    throw new Error("API 密钥为空。请在代码中提供您的 Gemini API 密钥。");
+                }
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const payload = { contents: [{ parts: [{ text: prompt }] }] };
+                if (isJsonRequest) { payload.generationConfig = { responseMimeType: "application/json" }; }
+                try {
+                    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!response.ok) { if (response.status === 403) { showApiKeyModal(); } throw new Error(`API call failed with status: ${response.status}`); }
+                    const result = await response.json();
+                    if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) { return result.candidates[0].content.parts[0].text; }
+                    else { const feedback = result.promptFeedback; if (feedback && feedback.blockReason) { throw new Error(`请求被阻止: ${feedback.blockReason}`); } throw new Error('API返回数据格式不正确'); }
+                } catch (error) { console.error("Gemini API call error:", error); throw error; }
+            }
+            document.querySelectorAll('.gemini-eli5-btn').forEach(button => {
+                button.addEventListener('click', async () => {
+                    const concept = button.dataset.concept;
+                    const container = button.closest('.card').querySelector('.gemini-response-container');
+                    container.style.display = 'block'; container.innerHTML = '<div class="gemini-response-box">✨ AI助教正在思考中...</div>';
+                    const prompt = `请用一个生动、通俗易懂的比喻来解释固态物理中的“${concept}”，让非专业的物理爱好者也能理解。解释应在150字以内，语言为简体中文。`;
+                    try { const response = await callGeminiAPI(prompt); container.innerHTML = `<div class="gemini-response-box">${response.replace(/\n/g, '<br>')}</div>`;
+                    } catch(e) { container.innerHTML = `<div class="gemini-response-box text-red-700">抱歉，AI助教出错了: ${e.message}</div>`; }
+                });
+            });
+            const frontierBtn = document.getElementById('gemini-frontier-btn');
+            const frontierInput = document.getElementById('gemini-frontier-prompt');
+            const frontierContainer = document.getElementById('gemini-frontier-response-container');
+            const askFrontier = async () => {
+                const userPrompt = frontierInput.value.trim(); if (!userPrompt) return;
+                frontierContainer.style.display = 'block'; frontierContainer.innerHTML = '<div class="gemini-response-box">✨ AI助教正在思考中...</div>';
+                const prompt = `在固态物理前沿课题的背景下，请用简体中文回答以下问题： "${userPrompt}"。`;
+                try { const response = await callGeminiAPI(prompt); frontierContainer.innerHTML = `<div class="gemini-response-box">${response.replace(/\n/g, '<br>')}</div>`;
+                } catch(e) { frontierContainer.innerHTML = `<div class="gemini-response-box text-red-700">抱歉，AI助教出错了: ${e.message}</div>`; }
+                frontierInput.value = '';
+            };
+            frontierBtn.addEventListener('click', askFrontier);
+            frontierInput.addEventListener('keypress', e => e.key === 'Enter' && askFrontier());
+            const quizBtn = document.getElementById('gemini-quiz-btn');
+            const quizContainer = document.getElementById('gemini-quiz-container');
+            quizBtn.addEventListener('click', async () => {
+                quizContainer.innerHTML = '<p class="text-center text-secondary py-4">✨ AI正在为您生成专属测验...</p>'; quizBtn.disabled = true; quizBtn.textContent = '生成中...';
+                const prompt = `请根据一个关于固态物理的应用内容，生成一个包含3个选择题的测验。应用涵盖了：布洛赫定理，近自由电子模型，紧束缚模型，有效质量。请确保问题覆盖了不同的核心概念，并且以JSON格式返回。JSON对象应包含一个名为 "quiz" 的数组，每个数组元素是一个对象，有 "question" (string), "options" (array of 4 strings), and "answerIndex" (integer, 0-3)。请使用简体中文。`;
+                try { const responseText = await callGeminiAPI(prompt, true); const data = JSON.parse(responseText); renderQuiz(data.quiz);
+                } catch (e) { console.error("Failed to parse quiz JSON:", e); quizContainer.innerHTML = `<p class="text-red-600 text-center py-4">抱歉，生成测验失败: ${e.message}</p>`;
+                } finally { quizBtn.disabled = false; quizBtn.textContent = '✨ 重新生成测验'; }
+            });
+            function renderQuiz(quizData) {
+                quizContainer.innerHTML = '';
+                quizData.forEach((item, index) => {
+                    const qDiv = document.createElement('div');
+                    qDiv.className = 'mb-6 p-5 border-l-4 border-slate-200';
+                    let optionsHtml = item.options.map((opt, optIndex) => `
+                        <label class="block my-2 p-3 rounded-md hover:bg-slate-100 cursor-pointer transition-colors duration-200 has-[:checked]:bg-indigo-50 has-[:checked]:font-semibold has-[:checked]:text-indigo-800">
+                            <input type="radio" name="q-${index}" value="${optIndex}" class="mr-3 align-middle sr-only">
+                            <span class="align-middle">${String.fromCharCode(65 + optIndex)}. ${opt}</span>
+                        </label>`).join('');
+                    qDiv.innerHTML = `<p class="font-semibold mb-2">${index + 1}. ${item.question}</p><div class="option-group">${optionsHtml}</div><div class="result-feedback mt-3"></div>`;
+                    quizContainer.appendChild(qDiv);
+                    qDiv.querySelector('.option-group').addEventListener('change', (e) => {
+                        const selectedIndex = parseInt(e.target.value);
+                        const feedbackEl = qDiv.querySelector('.result-feedback');
+                        const isCorrect = selectedIndex === item.answerIndex;
+                        const resultText = isCorrect ? '✅ 回答正确！' : `❌ 回答错误。正确答案是: ${item.options[item.answerIndex]}`;
+                        const resultClass = isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700';
+                        feedbackEl.innerHTML = `<p class="p-3 rounded-md text-sm font-medium ${resultClass}">${resultText}</p>`;
+                        qDiv.querySelectorAll('input[type="radio"]').forEach(radio => radio.disabled = true);
+                    });
+                });
+            }
+        }
+
+        function initBlochWaveChart() {
+            const ctx = document.getElementById('blochWaveChart').getContext('2d');
+            const kSlider = document.getElementById('k_slider');
+            const kValueSpan = document.getElementById('k_value');
+            const x = Array.from({length: 401}, (_, i) => -2 * LATTICE_CONSTANT + i * 0.01 * LATTICE_CONSTANT);
+            const getData = (k) => ({
+                labels: x.map(v => v.toFixed(2)),
+                datasets: [
+                    { label: '周期部分 u_k(x)', data: x.map(v => Math.cos(2 * Math.PI * v / LATTICE_CONSTANT)), borderColor: '#ef4444', borderWidth: 2, pointRadius: 0, tension: 0.1 },
+                    { label: '平面波 Re(e^ikx)', data: x.map(v => Math.cos(k * Math.PI * v / LATTICE_CONSTANT)), borderColor: '#3b82f6', borderWidth: 2, pointRadius: 0, tension: 0.1, borderDash: [4, 4] },
+                    { label: '布洛赫波 ψ_k(x)', data: x.map(v => Math.cos(2 * Math.PI * v / LATTICE_CONSTANT) * Math.cos(k * Math.PI * v / LATTICE_CONSTANT)), borderColor: '#10b981', borderWidth: 3, pointRadius: 0, tension: 0.1 }
+                ]
+            });
+            CHARTS.blochWave = new Chart(ctx, {
+                type: 'line',
+                data: getData(parseFloat(kSlider.value)),
+                options: { responsive: true, maintainAspectRatio: false, scales: { x: { display: false }, y: { min: -1.5, max: 1.5, ticks: { stepSize: 1 }}}, plugins: { legend: { display: false }, tooltip:{enabled: false}, } }
+            });
+            kSlider.addEventListener('input', () => {
+                const k = parseFloat(kSlider.value);
+                kValueSpan.textContent = k.toFixed(2);
+                CHARTS.blochWave.data = getData(k);
+                CHARTS.blochWave.update('none');
+            });
+        }
+        
+        function initNFEChart() {
+            const ctx = document.getElementById('nfeChart').getContext('2d');
+            const button = document.getElementById('nfeButton');
+            const statusText = document.getElementById('nfe-status-text');
+            const explanationDiv = document.getElementById('nfe-explanation');
+            const derivationToggle = document.getElementById('derivation-toggle-btn');
+            const derivationContent = document.getElementById('derivation-content');
+            derivationToggle.addEventListener('click', () => {
+                const isHidden = derivationContent.style.maxHeight === '0px' || !derivationContent.style.maxHeight;
+                derivationContent.style.maxHeight = isHidden ? derivationContent.scrollHeight + "px" : '0px';
+                derivationToggle.textContent = isHidden ? '隐藏公式推导' : '显示公式推导';
+            });
+            let nfeState = 0; const G = 2.0; const Vg = 0.6;
+            function generateBandData(k_points) {
+                const basisSize = 5; const bands = Array.from({ length: basisSize }, () => []);
+                k_points.forEach(k => {
+                    const H = math.zeros(basisSize, basisSize);
+                    for (let i = 0; i < basisSize; i++) {
+                        H.set([i, i], (k + (i - 2) * G) ** 2);
+                        if (i < basisSize - 1) { H.set([i, i + 1], Vg); H.set([i + 1, i], Vg); }
+                    }
+                    const eigs = math.eigs(H).values.toArray().sort((a,b)=> a-b);
+                    for (let i = 0; i < basisSize; i++) { bands[i].push({ x: k, y: eigs[i] }); }
+                });
+                return bands;
+            }
+            const k_points_ext = Array.from({length: 201}, (_, i) => -2 * G + i * (4 * G / 200));
+            const k_points_red = Array.from({length: 101}, (_, i) => -G/2 + i * (G / 100));
+            const k_points_periodic = Array.from({length: 301}, (_, i) => -1.5 * G + i * (3 * G / 300));
+            const datasets = {};
+            datasets.free = [{ data: k_points_ext.map(k => ({x: k, y: k*k})), borderColor: '#3b82f6', borderWidth: 3, pointRadius: 0 }];
+            datasets.folded = [-2, -1, 0, 1, 2].map(n => ({ data: k_points_ext.map(k => ({x: k, y: (k - n * G)**2})), borderColor: n === 0 ? '#3b82f6' : '#f59e0b', borderWidth: n === 0 ? 3 : 2, borderDash: n === 0 ? [] : [5, 5], pointRadius: 0 }));
+            const bandColors = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#9333ea'];
+            const allBands_periodic_raw = generateBandData(k_points_periodic);
+            const minE = Math.min(...allBands_periodic_raw[0].map(p => p.y));
+            const shiftEnergyData = (bands, shift) => bands.map(bandData => bandData.map(point => ({ x: point.x, y: point.y - shift })));
+            const bands_reduced_raw = generateBandData(k_points_red);
+            datasets.gapped_reduced = shiftEnergyData(bands_reduced_raw, minE).slice(0, 3).map((data, i) => ({ data, borderColor: bandColors[i], borderWidth: 3, pointRadius: 0, tension: 0.1 }));
+            datasets.gapped_periodic = shiftEnergyData(allBands_periodic_raw, minE).slice(0, 3).map((data, i) => ({ data, borderColor: bandColors[i], borderWidth: 3, pointRadius: 0, tension: 0.1 }));
+            CHARTS.nfe = new Chart(ctx, { type: 'line', data: { datasets: [] }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'linear', title: { display: true, text: '波矢 k (单位: π/a)' } }, y: { title: { display: true, text: '能量 E' } } }, plugins: { legend: { display: false }, tooltip: { enabled: false } } } });
+            const updateNFEChart = (state) => {
+                button.disabled = true; explanationDiv.classList.add('opacity-0');
+                const states = [
+                    { data: datasets.free, text: '2. 折叠能带', status: '自由电子能量 E ∝ k²，形成抛物线。', x_min: -2*G, x_max: 2*G, y_max: (2*G)**2, y_min: -1 },
+                    { data: datasets.folded, text: '3. 简约布里渊区', status: '将能带按倒格矢 G 平移，能带在布里渊区边界交叉。', x_min: -2*G, x_max: 2*G, y_max: (2*G)**2, y_min: -1 },
+                    { data: datasets.gapped_reduced, text: '4. 周期性延拓', status: '周期势导致能带反交叉，形成能隙（简约布里渊区方案）。', show_expl: true, x_min: -G/2, x_max: G/2, y_max: 10, y_min: 0 },
+                    { data: datasets.gapped_periodic, text: '1. 重置', status: '将能带在周期性势场中展开，得到完整的周期性能带结构。', show_expl: true, x_min: -1.5*G, x_max: 1.5*G, y_max: 10, y_min: 0 }
+                ];
+                const s = states[state];
+                statusText.textContent = s.status; button.textContent = s.text; if (s.show_expl) explanationDiv.classList.remove('opacity-0');
+                const chart = CHARTS.nfe; chart.data.datasets = s.data;
+                chart.options.scales.x.min = s.x_min; chart.options.scales.x.max = s.x_max; chart.options.scales.y.max = s.y_max; chart.options.scales.y.min = s.y_min;
+                chart.update(); if (s.show_expl) { drawStandingWave('standingWaveHigh', 'high'); drawStandingWave('standingWaveLow', 'low'); }
+                setTimeout(() => button.disabled = false, 400);
+            };
+            button.addEventListener('click', () => { nfeState = (nfeState + 1) % 4; updateNFEChart(nfeState); });
+            updateNFEChart(0);
+        }
+        
+        function drawStandingWave(canvasId, type) {
+            const canvas = document.getElementById(canvasId); if (!canvas) return; const ctx = canvas.getContext('2d');
+            canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+            const { width: w, height: h } = canvas;
+            const ionColor = 'rgba(59, 130, 246, 0.6)'; const probColor = (type === 'high') ? 'rgba(16, 185, 129, 0.5)' : 'rgba(79, 70, 229, 0.5)';
+            ctx.clearRect(0, 0, w, h);
+            const numIons = 5, ionRadius = Math.min(w / 40, h / 10), ionY = h * 0.75, spacing = w / numIons;
+            for (let i = 0; i < numIons; i++) { ctx.beginPath(); ctx.arc(spacing * (i + 0.5), ionY, ionRadius, 0, 2 * Math.PI); ctx.fillStyle = ionColor; ctx.fill(); }
+            ctx.beginPath(); ctx.moveTo(0, ionY);
+            for (let i = 0; i <= w; i++) { const x_norm = i / w * numIons; const val = (type === 'high') ? Math.sin(x_norm * Math.PI) : Math.cos(x_norm * Math.PI); ctx.lineTo(i, ionY - (val**2) * h * 0.6); }
+            ctx.lineTo(w, ionY); ctx.closePath(); ctx.fillStyle = probColor; ctx.fill();
+        }
+
+        // --- NEW: Function to initialize the s-band visualization ---
+        function initTightBindingS_BandViz() {
+            let j1 = 0.5;
+            const LATTICE_CONSTANT_a = 1;
+            const CHART_INSTANCE = {};
+            const BZ_SCENE = {};
+            function calculateEnergy(kx, ky, kz, J1) {
+                return -2 * J1 * (Math.cos(kx * LATTICE_CONSTANT_a) + Math.cos(ky * LATTICE_CONSTANT_a) + Math.cos(kz * LATTICE_CONSTANT_a));
+            }
+            function initBrillouinZone() {
+                const container = document.getElementById('bz-container'); if(!container) return;
+                const scene = new THREE.Scene();
+                const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 100);
+                camera.position.set(2.5, 2, 2.5);
+                const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                renderer.setSize(container.clientWidth, container.clientHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                renderer.toneMapping = THREE.ReinhardToneMapping;
+                container.appendChild(renderer.domElement);
+                const labelRenderer = new THREE.CSS2DRenderer();
+                labelRenderer.setSize(container.clientWidth, container.clientHeight);
+                labelRenderer.domElement.style.position = 'absolute';
+                labelRenderer.domElement.style.top = '0px';
+                labelRenderer.domElement.style.pointerEvents = 'none';
+                container.appendChild(labelRenderer.domElement);
+                const controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true; controls.minDistance = 2; controls.maxDistance = 10;
+                scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+                const pointLight = new THREE.PointLight(0xffffff, 0.8);
+                camera.add(pointLight); scene.add(camera);
+                const starVertices = [];
+                for (let i = 0; i < 10000; i++) { const x = THREE.MathUtils.randFloatSpread(200); const y = THREE.MathUtils.randFloatSpread(200); const z = THREE.MathUtils.randFloatSpread(200); starVertices.push(x, y, z); }
+                const starGeometry = new THREE.BufferGeometry();
+                starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+                const starMaterial = new THREE.PointsMaterial({ color: 0x888888, size: 0.1 });
+                const stars = new THREE.Points(starGeometry, starMaterial);
+                scene.add(stars);
+                const pi = Math.PI;
+                const bzGeometry = new THREE.BoxGeometry(2 * pi, 2 * pi, 2 * pi);
+                const bzMaterial = new THREE.MeshStandardMaterial({ color: 0x1e40af, transparent: true, opacity: 0.15, roughness: 0.2, metalness: 0.1 });
+                const bzCube = new THREE.Mesh(bzGeometry, bzMaterial); scene.add(bzCube);
+                const edges = new THREE.EdgesGeometry(bzGeometry);
+                const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 });
+                const bzEdges = new THREE.LineSegments(edges, edgeMaterial); scene.add(bzEdges);
+                const points = { 'Γ': { pos: [0, 0, 0], color: 0xffffff }, 'X': { pos: [pi, 0, 0], color: 0x34d399 }, 'M': { pos: [pi, pi, 0], color: 0xfb923c }, 'R': { pos: [pi, pi, pi], color: 0xf472b6 } };
+                for (const name in points) {
+                    const p = points[name];
+                    const pointGeo = new THREE.SphereGeometry(0.1, 16, 16);
+                    const pointMat = new THREE.MeshBasicMaterial({ color: p.color });
+                    const sphere = new THREE.Mesh(pointGeo, pointMat); sphere.position.set(...p.pos); scene.add(sphere);
+                    const labelDiv = document.createElement('div'); labelDiv.className = 'label_3d'; labelDiv.textContent = name;
+                    const label = new THREE.CSS2DObject(labelDiv); label.position.copy(sphere.position); scene.add(label);
+                }
+                const pathPoints = [ points['Γ'].pos, points['X'].pos, points['M'].pos, points['Γ'].pos, points['R'].pos, points['X'].pos ];
+                const pathGeometry = new THREE.BufferGeometry().setFromPoints(pathPoints.map(p => new THREE.Vector3(...p)));
+                const pathMaterial = new THREE.LineBasicMaterial({ color: 0xf87171, linewidth: 5 });
+                const pathLine = new THREE.Line(pathGeometry, pathMaterial); scene.add(pathLine);
+                const renderScene = new THREE.RenderPass(scene, camera);
+                const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+                bloomPass.threshold = 0; bloomPass.strength = 1.2; bloomPass.radius = 0.5;
+                const composer = new THREE.EffectComposer(renderer);
+                composer.addPass(renderScene); composer.addPass(bloomPass);
+                BZ_SCENE.composer = composer; BZ_SCENE.labelRenderer = labelRenderer; BZ_SCENE.controls = controls;
+                function animate() { requestAnimationFrame(animate); controls.update(); composer.render(); labelRenderer.render(scene, camera); } animate();
+                window.addEventListener('resize', () => {
+                    const width = container.clientWidth; const height = container.clientHeight;
+                    camera.aspect = width / height; camera.updateProjectionMatrix();
+                    renderer.setSize(width, height); composer.setSize(width, height); labelRenderer.setSize(width, height);
+                });
+            }
+            function initBandStructureChart() {
+                const ctx = document.getElementById('bandStructureChart')?.getContext('2d'); if(!ctx) return;
+                const k_path = [ { label: 'Γ', k: [0, 0, 0] }, { label: 'X', k: [Math.PI, 0, 0] }, { label: 'M', k: [Math.PI, Math.PI, 0] }, { label: 'Γ', k: [0, 0, 0] }, { label: 'R', k: [Math.PI, Math.PI, Math.PI] }, { label: 'X', k: [Math.PI, 0, 0] } ];
+                let labels = []; let k_points = []; const samples = 50;
+                for (let i = 0; i < k_path.length - 1; i++) {
+                    const start = k_path[i]; const end = k_path[i+1];
+                    labels.push(start.label);
+                    for(let j = 0; j < samples; j++) {
+                        const t = j / samples;
+                        k_points.push([ start.k[0] * (1 - t) + end.k[0] * t, start.k[1] * (1 - t) + end.k[1] * t, start.k[2] * (1 - t) + end.k[2] * t ]);
+                    }
+                }
+                labels.push(k_path[k_path.length - 1].label);
+                k_points.push(k_path[k_path.length - 1].k);
+                CHART_INSTANCE.k_points = k_points; CHART_INSTANCE.labels = labels;
+                CHART_INSTANCE.chart = new Chart(ctx, {
+                    type: 'line', data: { labels: Array(k_points.length).fill(''), datasets: [{ label: 's-能带', data: [], borderColor: '#4f46e5', backgroundColor: 'rgba(79, 70, 229, 0.1)', borderWidth: 2.5, pointRadius: 0, tension: 0.1 }] },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { callback: (v, i) => (i % samples === 0) ? labels[i/samples] : '', font: { size: 14, weight: 'bold' }, autoSkip: false, maxRotation: 0 }, grid: { color: (c) => (c.tick.value % samples === 0) ? '#cbd5e1' : 'transparent' } }, y: { title: { display: true, text: '能量 E', font: { size: 16 } } } }, plugins: { legend: { display: false } } }
+                });
+            }
+            function initControls() {
+                const j1Slider = document.getElementById('j1_slider'); if(!j1Slider) return;
+                j1Slider.addEventListener('input', (e) => { j1 = parseFloat(e.target.value); updateVisuals(); });
+            }
+            function updateVisuals() {
+                const j1ValueEl = document.getElementById('j1_value');
+                const bandwidthEl = document.getElementById('bandwidth_value');
+                if(j1ValueEl) j1ValueEl.textContent = j1.toFixed(2);
+                if(bandwidthEl) bandwidthEl.textContent = (12 * j1).toFixed(2);
+                const energyData = CHART_INSTANCE.k_points.map(k => calculateEnergy(k[0], k[1], k[2], j1));
+                CHART_INSTANCE.chart.data.datasets[0].data = energyData;
+                const maxE = Math.max(...energyData); const minE = Math.min(...energyData);
+                const padding = Math.max(0.1, (maxE - minE) * 0.1);
+                CHART_INSTANCE.chart.options.scales.y.max = maxE + padding;
+                CHART_INSTANCE.chart.options.scales.y.min = minE - padding;
+                CHART_INSTANCE.chart.update();
+            }
+            initBrillouinZone(); initBandStructureChart(); initControls(); updateVisuals();
+            renderMathInElement(document.getElementById('two-models'));
+        }
+        
+        function initEffectiveMassChart() {
+            const ctx = document.getElementById('effectiveMassChart').getContext('2d');
+            const infoEl = document.getElementById('effectiveMassInfo');
+            const k_points = Array.from({length: 101}, (_, i) => -1 + i * 0.02);
+            const t = 1, alpha = 2;
+            const E_k = k_points.map(val => alpha - 2 * t * Math.cos(val * Math.PI));
+            const m_star = k_points.map(val => {
+                const curvature = t * (Math.PI/LATTICE_CONSTANT)**2 * Math.cos(val * Math.PI);
+                return Math.abs(curvature) < 1e-9 ? Infinity : 1 / curvature;
+            });
+            CHARTS.effMass = new Chart(ctx, {
+                type: 'line', data: { labels: k_points.map(v => v.toFixed(2)), datasets: [{ label: 'E(k)', data: E_k, borderColor: '#4f46e5', borderWidth: 3, pointRadius: 2, pointBackgroundColor: 'white', pointHoverRadius: 7, pointHoverBackgroundColor: '#f59e0b', tension: 0.1 }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { x: { title: { display: true, text: '波矢 k (π/a)' }, ticks: { callback: (v,i,vals) => { if (i % 25 === 0) return k_points[i].toFixed(2) } } }, y: { title: { display: true, text: '能量 E' } } }, plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                    onHover: (event, chartElement) => {
+                        infoEl.textContent = '';
+                        if (chartElement.length > 0) {
+                            const idx = chartElement[0].index; const mass = m_star[idx]; let mass_str;
+                            if (mass === Infinity) mass_str = "m* → ∞";
+                            else if (mass > 100) mass_str = "m* > 100";
+                            else if (mass < -100) mass_str = "m* < -100";
+                            else mass_str = `m* ≈ ${mass.toFixed(2)}`;
+                            infoEl.textContent = `k=${k_points[idx].toFixed(2)}π/a, ${mass_str}`;
+                        }
+                    }
+                }
+            });
+        }
+
+        function initSSHModel() {
+            const chainContainer = document.getElementById('ssh-chain');
+            const button = document.getElementById('sshButton');
+            const phaseText = document.getElementById('ssh-phase-text');
+            const spectrumCtx = document.getElementById('sshSpectrumChart').getContext('2d');
+            let isTopological = false;
+            const calculateSSHSpectrum = (N, v, w) => {
+                const H = math.zeros(2 * N, 2 * N);
+                for (let i = 0; i < N; i++) {
+                    const iA = 2 * i; const iB = 2 * i + 1;
+                    H.set([iA, iB], -v); H.set([iB, iA], -v);
+                    if (i < N - 1) { H.set([iB, iB + 1], -w); H.set([iB + 1, iB], -w); }
+                }
+                return math.eigs(H).values.toArray().sort((a,b) => a-b);
+            };
+            CHARTS.sshSpectrum = new Chart(spectrumCtx, { type: 'scatter', options: { responsive: true, maintainAspectRatio: false, scales: { x: { display: false }, y: { title: { display: true, text: '能量 E' }, min: -2.5, max: 2.5 } }, plugins: { legend: { display: false }, tooltip: { enabled: false } } } });
+            const renderChain = () => {
+                chainContainer.innerHTML = ''; const cellCount = 4;
+                for (let i = 0; i < cellCount; i++) {
+                     chainContainer.innerHTML += `
+                        <div class="flex items-center relative" style="margin-left: -0.75rem; margin-right: -0.75rem;">
+                             <div class="relative px-3 flex flex-col items-center">
+                                <div class="atom w-6 h-6 rounded-full z-10 bg-indigo-500 ring-2 ring-white"></div><span class="text-xs text-slate-500 mt-1">A</span>
+                             </div>
+                             <div class="bond-label v-label absolute top-0 left-1/2 -translate-x-1/2 -translate-y-4 text-emerald-600 font-bold">v</div>
+                             <div class="bond intra h-1.5 z-0"></div>
+                             <div class="relative px-3 flex flex-col items-center">
+                                <div class="atom w-6 h-6 rounded-full z-10 bg-emerald-500 ring-2 ring-white"></div><span class="text-xs text-slate-500 mt-1">B</span>
+                             </div>
+                        </div>
+                        ${i < cellCount - 1 ? '<div class="relative h-full flex items-center"><div class="bond-label w-label absolute top-0 left-1/2 -translate-x-1/2 -translate-y-4 text-red-600 font-bold">w</div><div class="bond inter h-1.5 z-0"></div></div>' : ''}
+                    `;
+                }
+            };
+            const updateVisuals = () => {
+                const N_cells = 20; const [v, w] = isTopological ? [0.5, 1.5] : [1.5, 0.5];
+                const [v_w, w_w] = isTopological ? ['1rem', '3rem'] : ['3rem', '1rem'];
+                const [v_c, w_c] = isTopological ? ['bg-slate-400', 'bg-red-500'] : ['bg-red-500', 'bg-slate-400'];
+                const atoms = chainContainer.querySelectorAll('.atom');
+                atoms.forEach(a => a.classList.remove('ring-4', 'ring-red-500', 'animate-pulse'));
+                chainContainer.querySelectorAll('.intra').forEach(b => { b.style.width = v_w; b.className = `bond intra h-1.5 z-0 transition-all duration-300 ${v_c}`;});
+                chainContainer.querySelectorAll('.inter').forEach(b => { b.style.width = w_w; b.className = `bond inter h-1.5 z-0 transition-all duration-300 ${w_c}`; });
+                const energies = calculateSSHSpectrum(N_cells, v, w);
+                const spectrumData = energies.map((E, i) => ({ x: i, y: E }));
+                CHARTS.sshSpectrum.data.datasets = [{ data: spectrumData, pointBackgroundColor: spectrumData.map(p => Math.abs(p.y) < 0.1 ? 'red' : '#10b981'), pointRadius: spectrumData.map(p => Math.abs(p.y) < 0.1 ? 6 : 4), pointHoverRadius: 8 }];
+                CHARTS.sshSpectrum.update();
+                if(isTopological) {
+                    atoms[0].classList.add('ring-4', 'ring-red-500', 'animate-pulse'); atoms[atoms.length-1].classList.add('ring-4', 'ring-red-500', 'animate-pulse');
+                    phaseText.textContent = '拓扑相: 带隙中出现零能边缘态！'; phaseText.style.color = 'var(--accent-secondary)';
+                } else {
+                    phaseText.textContent = '平庸相: 能谱存在完整带隙。'; phaseText.style.color = 'var(--text-secondary)';
+                }
+                button.textContent = isTopological ? '切换到平庸相 (v > w)' : '切换到拓扑相 (v < w)';
+            };
+            button.addEventListener('click', () => { isTopological = !isTopological; updateVisuals(); });
+            renderChain(); updateVisuals();
+        }
+
+        init();
+    });
+    </script>
+</body>
+</html>
